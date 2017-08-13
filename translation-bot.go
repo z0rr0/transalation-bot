@@ -4,14 +4,20 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"regexp"
 	"runtime"
+	"strings"
+	"syscall"
 	"time"
+	"errors"
 )
 
 const (
@@ -40,6 +46,8 @@ var (
 	BuildDate = ""
 	// GoVersion is runtime Go language version
 	GoVersion = runtime.Version()
+	// Author is author email
+	Author = "thebestzorro@yandex.ru"
 
 	// urlMap is services URLs
 	urlMap = map[string]string{
@@ -63,6 +71,25 @@ var (
 		log.Ldate|log.Ltime|log.Lshortfile)
 )
 
+// interrupt catches custom signals.
+func interrupt(errc chan error) {
+	c := make(chan os.Signal)
+	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
+	errc <- fmt.Errorf("%v %v", interruptPrefix, <-c)
+}
+
+func deferHandler(w http.ResponseWriter, r *http.Request, code int, start time.Time, err error) {
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusExpectationFailed)
+	}
+	loggerInfo.Printf("%-5v %v\t%-12v\t%v",
+		r.Method,
+		code,
+		time.Since(start),
+		r.URL.String(),
+	)
+}
+
 func main() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -82,10 +109,61 @@ func main() {
 	if err != nil {
 		loggerError.Panicf("configuration error: %v", err)
 	}
+	//mainCtx := context.WithValue(context.Background(), cfgKeyValue, cfg)
+
 	tr := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 	}
 	httpClient = &http.Client{Transport: tr}
+	// server
+	server := &http.Server{
+		Addr:           cfg.Addr(),
+		Handler:        http.DefaultServeMux,
+		MaxHeaderBytes: 1 << 20, // 1MB
+		ErrorLog:       loggerError,
+	}
+	// handlers
+	http.HandleFunc("/info", func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		start, code := time.Now(), http.StatusOK
+		defer deferHandler(w, r, code, start, err)
 
-	fmt.Println(cfg)
+		if r.Method != "GET" {
+			err = errors.New("expected GET method")
+			return
+		}
+
+		response := &InfoHandler{
+			Author:   Author,
+			Info:     "Radio-t chat yandex translation-bot",
+			Commands: []string{},
+		}
+		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+		w.WriteHeader(http.StatusCreated)
+		encoder := json.NewEncoder(w)
+		err = encoder.Encode(response)
+		if err != nil {
+			return
+		}
+	})
+
+	errCh := make(chan error)
+	go interrupt(errCh)
+	go func() {
+		errCh <- server.ListenAndServe()
+	}()
+	loggerInfo.Printf("running: version=%v [%v %v]\nListen: %v\n\n",
+		Version, GoVersion, Revision, server.Addr)
+	err = <-errCh
+	loggerInfo.Printf("termination: %v [%v] reason: %+v\n", Version, Revision, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
+	defer cancel()
+
+	if msg := err.Error(); strings.HasPrefix(msg, interruptPrefix) {
+		loggerInfo.Println("graceful shutdown")
+		if err := server.Shutdown(ctx); err != nil {
+			loggerError.Printf("graceful shutdown error: %v\n", err)
+		}
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,9 +23,11 @@ type ctxKey string
 
 // Config is API key storage.
 type Config struct {
-	TranslationKey string
-	DictionaryKey  string
-	TimeoutValue   uint
+	Host           string `json:"host"`
+	Port           uint   `json:"port"`
+	TranslationKey string `json:"tkey"`
+	DictionaryKey  string `json:"dkey"`
+	TimeoutValue   uint   `json:"timeout"`
 	timeout        time.Duration
 }
 
@@ -85,6 +88,18 @@ type JSONTrResp struct {
 	Code float64  `json:"code"`
 	Lang string   `json:"lang"`
 	Text []string `json:"text"`
+}
+
+// InfoHandler is http GET:/info handler.
+type InfoHandler struct {
+	Author   string   `json:"author"`
+	Info     string   `json:"info"`
+	Commands []string `json:"commands"`
+}
+
+// Addr returns service's net address.
+func (c *Config) Addr() string {
+	return net.JoinHostPort(c.Host, fmt.Sprint(c.Port))
 }
 
 // Content is LangsList's implementation of Content method.

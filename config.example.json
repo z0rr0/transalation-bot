@@ -1,0 +1,7 @@
+{
+	"host": "",
+	"port": 8080,
+	"tkey": "translation key",
+	"dkey": "dictionary key",
+	"timeout": 5
+}
