@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -358,4 +359,84 @@ func Translate(ctx context.Context, text string) (string, error) {
 		return "", err
 	}
 	return result, nil
+}
+
+// deferHandler writes log info to console.
+func deferHandler(w http.ResponseWriter, r *http.Request, code int, start time.Time, err error) {
+	if err != nil {
+		code = http.StatusExpectationFailed
+		http.Error(w, err.Error(), code)
+	}
+	loggerInfo.Printf("%-5v %v\t%-12v\t%v",
+		r.Method,
+		code,
+		time.Since(start),
+		r.URL.String(),
+	)
+}
+
+// handlerInfo is handler for GET:/info request.
+func handlerInfo(w http.ResponseWriter, r *http.Request) {
+	var err error
+	start, code := time.Now(), http.StatusCreated
+	defer func() {
+		deferHandler(w, r, code, start, err)
+	}()
+
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+	if r.Method != "GET" {
+		err = fmt.Errorf("%v method is not allowed", r.Method)
+		return
+	}
+	response := &InfoResponse{
+		Author:   Author,
+		Info:     "Radio-t chat yandex translation-bot",
+		Commands: []string{},
+	}
+	w.WriteHeader(http.StatusCreated)
+	encoder := json.NewEncoder(w)
+	err = encoder.Encode(response)
+	if err != nil {
+		return
+	}
+}
+
+// handlerEvent is handler for POST:/event request.
+func handlerEvent(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	var err error
+	start, code := time.Now(), http.StatusCreated
+	defer func() {
+		deferHandler(w, r, code, start, err)
+	}()
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+	if r.Method != "POST" {
+		err = fmt.Errorf("%v method is not allowed", r.Method)
+		return
+	}
+	decoder := json.NewDecoder(r.Body)
+	req := &EventRequest{}
+	err = decoder.Decode(req)
+	if (err != nil) && (err != io.EOF) {
+		loggerError.Printf("JSON decode eror: %v", err)
+		return
+	}
+	result, err := Translate(ctx, req.Text)
+	if err != nil {
+		loggerError.Printf("translation eror: %v", err)
+		return
+	}
+	if result == "" {
+		err = errors.New("nothing")
+		return
+	}
+	response := &EventResponse{
+		Text: result,
+		Bot:  Name,
+	}
+	w.WriteHeader(http.StatusCreated)
+	encoder := json.NewEncoder(w)
+	err = encoder.Encode(response)
+	if err != nil {
+		return
+	}
 }
