@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -63,6 +64,8 @@ var (
 	// translation and dictionary languages storage
 	trLangs   []string
 	dictLangs []string
+	langsOnce sync.Once
+
 	// httpClient is base HTTP client struct
 	httpClient *http.Client
 	// internal loggers

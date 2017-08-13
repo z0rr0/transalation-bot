@@ -208,7 +208,6 @@ func request(urlValue string, params *url.Values, timeout time.Duration) ([]byte
 		ec <- err
 		close(ec)
 	}()
-	fmt.Println("xaz", urlValue, params)
 	select {
 	case <-ctx.Done():
 		<-ec // wait error "context deadline exceeded"
@@ -260,27 +259,30 @@ func getLangs(ctx context.Context, isTr bool) ([]string, error) {
 	return result.Content(), nil
 }
 
+// initLanguages initializes languages arrays
+func initLanguages(ctx context.Context) error {
+	var err error
+	trLangs, err = getLangs(ctx, true)
+	if err != nil {
+		return err
+	}
+	dictLangs, err = getLangs(ctx, true)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // isDirection checks - "direction" is language direction.
 func isDirection(ctx context.Context, direction string, isTr bool) (bool, error) {
-	var (
-		languages []string
-		err       error
-	)
+	var languages []string
+	langsOnce.Do(func() {
+		initLanguages(ctx)
+	})
 	if isTr {
 		languages = trLangs
 	} else {
 		languages = dictLangs
-	}
-	if len(languages) == 0 {
-		languages, err = getLangs(ctx, isTr)
-		if err != nil {
-			return false, err
-		}
-		if isTr {
-			trLangs = languages
-		} else {
-			dictLangs = languages
-		}
 	}
 	if i := sort.SearchStrings(languages, direction); i < len(languages) && languages[i] == direction {
 		return true, nil
