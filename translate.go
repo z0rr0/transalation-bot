@@ -36,6 +36,7 @@ type Translater interface {
 	String() string
 }
 
+// Langer is an interface for translate/dictionary languages collection.
 type Langer interface {
 	Content() []string
 }
