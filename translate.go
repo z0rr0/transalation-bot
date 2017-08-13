@@ -90,11 +90,24 @@ type JSONTrResp struct {
 	Text []string `json:"text"`
 }
 
-// InfoHandler is http GET:/info handler.
-type InfoHandler struct {
+// InfoResponse is http GET:/info JSON response.
+type InfoResponse struct {
 	Author   string   `json:"author"`
 	Info     string   `json:"info"`
 	Commands []string `json:"commands"`
+}
+
+// EventRequest is http POST:/event request.
+type EventRequest struct {
+	Text        string `json:"text"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+}
+
+// EventResponse is http POSt:/event response.
+type EventResponse struct {
+	Text string `json:"text"`
+	Bot  string `json:"bot"`
 }
 
 // Addr returns service's net address.
@@ -176,9 +189,9 @@ func readConfig(file string) (*Config, error) {
 }
 
 // request is a common method to send POST request and get []byte response.
-func request(url string, params *url.Values, timeout time.Duration) ([]byte, error) {
+func request(urlValue string, params *url.Values, timeout time.Duration) ([]byte, error) {
 	var resp *http.Response
-	req, err := http.NewRequest("POST", url, strings.NewReader(params.Encode()))
+	req, err := http.NewRequest("POST", urlValue, strings.NewReader(params.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -195,6 +208,7 @@ func request(url string, params *url.Values, timeout time.Duration) ([]byte, err
 		ec <- err
 		close(ec)
 	}()
+	fmt.Println("xaz", urlValue, params)
 	select {
 	case <-ctx.Done():
 		<-ec // wait error "context deadline exceeded"
@@ -228,11 +242,11 @@ func getLangs(ctx context.Context, isTr bool) ([]string, error) {
 	}
 	if isTr {
 		urlValue = urlMap["trLangs"]
-		params = url.Values{"key": {c.DictionaryKey}}
+		params = url.Values{"key": {c.TranslationKey}}
 		result = &LangsListTr{}
 	} else {
 		urlValue = urlMap["dictLangs"]
-		params = url.Values{"key": {c.TranslationKey}, "ui": {"en"}}
+		params = url.Values{"key": {c.DictionaryKey}, "ui": {"en"}}
 		result = &LangsList{}
 	}
 	body, err := request(urlValue, &params, c.timeout)
@@ -324,7 +338,7 @@ func Translate(ctx context.Context, text string) (string, error) {
 		return "", nil
 	}
 	direction := strings.Trim(text[found[0][0]:found[0][1]], " ")
-	parsed := text[found[0][1]:]
+	parsed := strings.Trim(text[found[0][1]:], " ")
 
 	// is it "translate" or "dictionary"
 	elements := strings.SplitN(parsed, " ", 2)
@@ -333,6 +347,7 @@ func Translate(ctx context.Context, text string) (string, error) {
 	}
 	ok, err := isDirection(ctx, direction, isTr)
 	if err != nil {
+		loggerInfo.Println("is not a direction")
 		return "", err
 	}
 	if !ok {

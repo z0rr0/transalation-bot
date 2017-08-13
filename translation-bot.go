@@ -6,8 +6,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -17,7 +19,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"errors"
 )
 
 const (
@@ -80,7 +81,8 @@ func interrupt(errc chan error) {
 
 func deferHandler(w http.ResponseWriter, r *http.Request, code int, start time.Time, err error) {
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusExpectationFailed)
+		code = http.StatusExpectationFailed
+		http.Error(w, err.Error(), code)
 	}
 	loggerInfo.Printf("%-5v %v\t%-12v\t%v",
 		r.Method,
@@ -109,7 +111,7 @@ func main() {
 	if err != nil {
 		loggerError.Panicf("configuration error: %v", err)
 	}
-	//mainCtx := context.WithValue(context.Background(), cfgKeyValue, cfg)
+	mainCtx := context.WithValue(context.Background(), cfgKeyValue, cfg)
 
 	tr := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
@@ -125,20 +127,59 @@ func main() {
 	// handlers
 	http.HandleFunc("/info", func(w http.ResponseWriter, r *http.Request) {
 		var err error
-		start, code := time.Now(), http.StatusOK
-		defer deferHandler(w, r, code, start, err)
+		start, code := time.Now(), http.StatusCreated
+		defer func() {
+			deferHandler(w, r, code, start, err)
+		}()
 
+		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 		if r.Method != "GET" {
-			err = errors.New("expected GET method")
+			err = fmt.Errorf("%v method is not allowed", r.Method)
 			return
 		}
-
-		response := &InfoHandler{
+		response := &InfoResponse{
 			Author:   Author,
 			Info:     "Radio-t chat yandex translation-bot",
 			Commands: []string{},
 		}
+		w.WriteHeader(http.StatusCreated)
+		encoder := json.NewEncoder(w)
+		err = encoder.Encode(response)
+		if err != nil {
+			return
+		}
+	})
+	http.HandleFunc("/event", func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		start, code := time.Now(), http.StatusCreated
+		defer func() {
+			deferHandler(w, r, code, start, err)
+		}()
 		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+		if r.Method != "POST" {
+			err = fmt.Errorf("%v method is not allowed", r.Method)
+			return
+		}
+		decoder := json.NewDecoder(r.Body)
+		req := &EventRequest{}
+		err = decoder.Decode(req)
+		if (err != nil) && (err != io.EOF) {
+			loggerError.Printf("JSON decode eror: %v", err)
+			return
+		}
+		result, err := Translate(mainCtx, req.Text)
+		if err != nil {
+			loggerError.Printf("translation eror: %v", err)
+			return
+		}
+		if result == "" {
+			err = errors.New("nothing")
+			return
+		}
+		response := &EventResponse{
+			Text: result,
+			Bot:  Name,
+		}
 		w.WriteHeader(http.StatusCreated)
 		encoder := json.NewEncoder(w)
 		err = encoder.Encode(response)
