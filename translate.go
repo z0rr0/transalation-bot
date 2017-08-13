@@ -277,9 +277,6 @@ func initLanguages(ctx context.Context) error {
 // isDirection checks - "direction" is language direction.
 func isDirection(ctx context.Context, direction string, isTr bool) (bool, error) {
 	var languages []string
-	langsOnce.Do(func() {
-		initLanguages(ctx)
-	})
 	if isTr {
 		languages = trLangs
 	} else {

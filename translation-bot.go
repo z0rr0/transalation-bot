@@ -17,7 +17,6 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 )
@@ -64,7 +63,6 @@ var (
 	// translation and dictionary languages storage
 	trLangs   []string
 	dictLangs []string
-	langsOnce sync.Once
 
 	// httpClient is base HTTP client struct
 	httpClient *http.Client
@@ -115,11 +113,14 @@ func main() {
 		loggerError.Panicf("configuration error: %v", err)
 	}
 	mainCtx := context.WithValue(context.Background(), cfgKeyValue, cfg)
-
 	tr := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 	}
 	httpClient = &http.Client{Transport: tr}
+	err = initLanguages(mainCtx)
+	if err != nil {
+		loggerError.Panicf("no languages: %v", err)
+	}
 	// server
 	server := &http.Server{
 		Addr:           cfg.Addr(),
