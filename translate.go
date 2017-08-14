@@ -268,7 +268,7 @@ func initLanguages(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	dictLangs, err = getLangs(ctx, true)
+	dictLangs, err = getLangs(ctx, false)
 	if err != nil {
 		return err
 	}
@@ -340,7 +340,9 @@ func Translate(ctx context.Context, text string) (string, error) {
 	}
 	direction := strings.Trim(text[found[0][0]:found[0][1]], " ")
 	parsed := strings.Trim(text[found[0][1]:], " ")
-
+	if parsed == "" {
+		return "", nil
+	}
 	// is it "translate" or "dictionary"
 	elements := strings.SplitN(parsed, " ", 2)
 	if len(elements) > 1 {
@@ -413,6 +415,8 @@ func handlerEvent(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		err = fmt.Errorf("%v method is not allowed", r.Method)
 		return
 	}
+	defer r.Body.Close()
+
 	decoder := json.NewDecoder(r.Body)
 	req := &EventRequest{}
 	err = decoder.Decode(req)
@@ -437,6 +441,6 @@ func handlerEvent(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
 	err = encoder.Encode(response)
 	if err != nil {
-		return
+		loggerError.Printf("failed json encode: %v", err)
 	}
 }

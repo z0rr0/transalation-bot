@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,37 +12,99 @@ import (
 	"time"
 )
 
-func upTestServices() {
-	response := `{
-    "dirs": [
-        "ru-en",
-        "ru-pl",
-        "ru-hu"
-    ],
-    "langs": {
-        "ru": "русский",
-        "en": "английский",
-        "pl": "польский"
-    }}`
-	handlerTrLang := func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, response)
+func upTestServices(ctx context.Context, t *testing.T) *httptest.Server {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Logf("request %v", r.URL.Path)
+		switch r.URL.Path {
+		case "/tr.json/getLangs":
+			response := `{
+				"dirs": [
+					"en-ru",
+					"ru-pl",
+					"ru-hu"
+				],
+				"langs": {
+					"ru": "русский",
+					"en": "английский",
+					"pl": "польский"
+    		}}`
+			w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, response)
+		case "/dicservice.json/getLangs":
+			response := `["ru-ru","ru-en","ru-pl","ru-uk","ru-de","ru-fr","ru-es",
+				"ru-it","ru-tr","en-ru","en-en","en-de","en-fr","en-es","en-it","en-tr",
+				"pl-ru","uk-ru","de-ru","de-en","fr-ru","fr-en","es-ru","es-en",
+				"it-ru","it-en","tr-ru","tr-en"]`
+			w.Header().Set("Content-Type", "application/json; chts.URLarset=UTF-8")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, response)
+		case "/tr.json/translate":
+			response := `{
+				"code": 200,
+				"lang": "en-ru",
+				"text": [
+					"Здравствуй, Мир!"
+				]
+			}`
+			w.Header().Set("Content-Type", "application/json; chts.URLarset=UTF-8")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, response)
+		case "/dicservice.json/lookup":
+			response := `
+			{ "head": {},
+				"def": [
+				 { "text": "time", "pos": "noun",
+				   "tr": [
+					  { "text": "время", "pos": "существительное",
+						"syn": [
+						   { "text": "раз" },
+						   { "text": "тайм" }
+						],
+						"mean": [
+						   { "text": "timing" },
+						   { "text": "fold" },
+						   { "text": "half"}
+						],
+						"ex" : [
+						   { "text": "prehistoric time",
+							 "tr": [
+								{ "text": "доисторическое время" }
+							 ]
+						   },
+						   { "text": "hundredth time",
+							 "tr": [
+								{ "text": "сотый раз" }
+							 ]
+						   },
+						   { "text": "time-slot",
+							 "tr": [
+								{ "text": "тайм-слот" }
+							 ]
+						   }
+						]
+					  }
+				   ]
+				}
+			]}`
+			w.Header().Set("Content-Type", "application/json; chts.URLarset=UTF-8")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, response)
+		case "/event":
+			handlerEvent(ctx, w, r)
+		default:
+			http.Error(w, "Not found", http.StatusNotFound)
+		}
+	}))
+	// overwrite default settings
+	urlMap = map[string]string{
+		"translate":  ts.URL + "/tr.json/translate",
+		"dictionary": ts.URL + "/dicservice.json/lookup",
+		"trLangs":    ts.URL + "/tr.json/getLangs",
+		"dictLangs":  ts.URL + "/dicservice.json/getLangs",
 	}
-	handlerTrLang(
-		httptest.NewRecorder(),
-		httptest.NewRequest("POST", urlMap["trLangs"], nil),
-	)
 
-	response = `["ru-ru","ru-en","ru-pl","ru-uk","ru-de","ru-fr","ru-es",
-	"ru-it","ru-tr","en-ru","en-en","en-de","en-fr","en-es","en-it","en-tr",
-	"pl-ru","uk-ru","de-ru","de-en","fr-ru","fr-en","es-ru","es-en",
-	"it-ru","it-en","tr-ru","tr-en"]`
-	handlerDictLang := func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, response)
-	}
-	handlerDictLang(
-		httptest.NewRecorder(),
-		httptest.NewRequest("POST", urlMap["dictLangs"], nil),
-	)
+	return ts
 }
 
 func TestInfo(t *testing.T) {
@@ -76,7 +139,17 @@ func TestInfo(t *testing.T) {
 }
 
 func TestEvent(t *testing.T) {
-	upTestServices()
+	testValues := map[string]struct {
+		Code    int
+		HasText bool
+	}{
+		"":                           {http.StatusExpectationFailed, false},
+		"text":                       {http.StatusExpectationFailed, false},
+		"enru failed":                {http.StatusExpectationFailed, false},
+		"en-ru dictionary":           {http.StatusCreated, true},
+		"en-ru translate some words": {http.StatusCreated, true},
+	}
+
 	cfg := &Config{
 		TranslationKey: "test",
 		DictionaryKey:  "test",
@@ -87,21 +160,50 @@ func TestEvent(t *testing.T) {
 		Proxy: http.ProxyFromEnvironment,
 	}
 	httpClient = &http.Client{Transport: tr}
+
+	ts := upTestServices(mainCtx, t)
+	defer ts.Close()
+
 	err := initLanguages(mainCtx)
 	if err != nil {
-		t.Errorf("init langs errors: %v", err)
+		t.Fatalf("init langs errors: %v", err)
 	}
-	//
-	//ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	//	handlerEvent(ctx, w, r)
-	//}))
-	//defer ts.Close()
-	//
-	//res, err := http.Get(ts.URL)
-	//if err != nil {
-	//	t.Errorf("unexpected error: %v", err)
-	//}
-	//if s := res.StatusCode; s != http.StatusExpectationFailed {
-	//	t.Errorf("wrong status: %v", s)
-	//}
+	if len(trLangs) == 0 {
+		t.Fatal("empty tr langs")
+	}
+	if len(dictLangs) == 0 {
+		t.Fatal("empty dict langs")
+	}
+
+	for k, v := range testValues {
+		req := &EventRequest{
+			Text:        k,
+			Username:    "username",
+			DisplayName: "display name",
+		}
+		data, err := json.Marshal(req)
+		if err != nil {
+			t.Errorf("request marshal error: %v", err)
+		}
+		res, err := http.Post(ts.URL+"/event", "application/json; charset=UTF-8", bytes.NewBuffer(data))
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if s := res.StatusCode; s != v.Code {
+			t.Errorf("wrong status %v, expected %v", s, v.Code)
+		} else {
+			if v.HasText {
+				decoder := json.NewDecoder(res.Body)
+				jresp := &EventResponse{}
+				err = decoder.Decode(jresp)
+				if (err != nil) && (err != io.EOF) {
+					t.Errorf("JSON decode eror: %v", err)
+				}
+				if jresp.Text == "" {
+					t.Errorf("no exptect text for request: %v", k)
+				}
+			}
+		}
+		res.Body.Close()
+	}
 }
