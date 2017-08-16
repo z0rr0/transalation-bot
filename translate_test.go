@@ -141,13 +141,14 @@ func TestInfo(t *testing.T) {
 func TestEvent(t *testing.T) {
 	testValues := map[string]struct {
 		Code    int
-		HasText bool
+		Text string
 	}{
-		"":                           {http.StatusExpectationFailed, false},
-		"text":                       {http.StatusExpectationFailed, false},
-		"enru failed":                {http.StatusExpectationFailed, false},
-		"en-ru dictionary":           {http.StatusCreated, true},
-		"en-ru translate some words": {http.StatusCreated, true},
+		"":                           {http.StatusExpectationFailed, ""},
+		"text":                       {http.StatusExpectationFailed, ""},
+		"enru failed":                {http.StatusExpectationFailed, ""},
+		"zz-zz some text":            {http.StatusExpectationFailed, ""},
+		"en-ru dictionary":           {http.StatusCreated, "Здравствуй, Мир!"},
+		"en-ru translate some words": {http.StatusCreated, fmt.Sprintf("time%vвремя (существительное)", strSep)},
 	}
 
 	cfg := &Config{
@@ -192,15 +193,15 @@ func TestEvent(t *testing.T) {
 		if s := res.StatusCode; s != v.Code {
 			t.Errorf("wrong status %v, expected %v", s, v.Code)
 		} else {
-			if v.HasText {
+			if v.Text != "" {
 				decoder := json.NewDecoder(res.Body)
 				jresp := &EventResponse{}
 				err = decoder.Decode(jresp)
 				if (err != nil) && (err != io.EOF) {
 					t.Errorf("JSON decode eror: %v", err)
 				}
-				if jresp.Text == "" {
-					t.Errorf("no exptect text for request: %v", k)
+				if text := jresp.Text; text == v.Text {
+					t.Errorf("unexpected text for request: %v != %v", text, v.Text)
 				}
 			}
 		}

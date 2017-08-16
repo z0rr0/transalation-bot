@@ -276,7 +276,7 @@ func initLanguages(ctx context.Context) error {
 }
 
 // isDirection checks - "direction" is language direction.
-func isDirection(ctx context.Context, direction string, isTr bool) (bool, error) {
+func isDirection(ctx context.Context, direction string, isTr bool) bool {
 	var languages []string
 	if isTr {
 		languages = trLangs
@@ -284,9 +284,9 @@ func isDirection(ctx context.Context, direction string, isTr bool) (bool, error)
 		languages = dictLangs
 	}
 	if i := sort.SearchStrings(languages, direction); i < len(languages) && languages[i] == direction {
-		return true, nil
+		return true
 	}
-	return false, nil
+	return false
 }
 
 // getTranslation returns translation result: "translate" or dictionary.
@@ -348,12 +348,8 @@ func Translate(ctx context.Context, text string) (string, error) {
 	if len(elements) > 1 {
 		isTr = true
 	}
-	ok, err := isDirection(ctx, direction, isTr)
-	if err != nil {
-		loggerInfo.Println("is not a direction")
-		return "", err
-	}
-	if !ok {
+	if !isDirection(ctx, direction, isTr) {
+		loggerInfo.Printf("is not a direction: %v", direction)
 		return "", nil
 	}
 	result, err := getTranslation(ctx, isTr, direction, parsed)
